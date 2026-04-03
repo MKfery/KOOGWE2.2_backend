@@ -1,0 +1,462 @@
+// prisma/schema.prisma — Koogwe Backend FUSIONNÉ v3
+// V2 (structure propre, OTP) + V1 (wallet, documents, face-verif, livraison, admin complet)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enums ─────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  PASSENGER
+  DRIVER
+  ADMIN
+}
+
+enum DriverStatus {
+  PENDING
+  DOCUMENTS_SUBMITTED
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum DriverAvailability {
+  ONLINE
+  OFFLINE
+  ON_RIDE
+}
+
+enum AccountStatus {
+  EMAIL_NOT_VERIFIED
+  EMAIL_VERIFIED
+  FACE_VERIFICATION_PENDING
+  DOCUMENTS_PENDING
+  ADMIN_REVIEW_PENDING
+  ACTIVE
+  REJECTED
+  SUSPENDED
+}
+
+enum RideStatus {
+  REQUESTED
+  ACCEPTED
+  DRIVER_EN_ROUTE
+  ARRIVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  WALLET
+  ORANGE_MONEY
+  FREE_MONEY
+  WAVE
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum VehicleType {
+  MOTO
+  ECO
+  CONFORT
+  VAN
+  BERLINE
+  SUV
+  LUXE
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  SYSTEM
+}
+
+enum NotificationType {
+  RIDE_REQUEST
+  RIDE_ACCEPTED
+  RIDE_CANCELLED
+  DRIVER_ARRIVED
+  RIDE_COMPLETED
+  PAYMENT_RECEIVED
+  ACCOUNT_VALIDATED
+  NEW_MESSAGE
+  PROMO
+  ADMIN_ACTION
+  PANIC
+  FAVORITE_DRIVER
+}
+
+enum DocumentType {
+  ID_CARD_FRONT
+  ID_CARD_BACK
+  PASSPORT
+  SELFIE
+  SELFIE_WITH_ID
+  DRIVERS_LICENSE
+  VEHICLE_REGISTRATION
+  INSURANCE
+  TECHNICAL_CONTROL
+}
+
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TransactionType {
+  RECHARGE
+  PAYMENT
+  REFUND
+  WITHDRAWAL
+  COMMISSION
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ServiceType {
+  VTC
+  DELIVERY
+}
+
+enum ParcelSize {
+  SMALL
+  MEDIUM
+  LARGE
+}
+
+// ─── Users ─────────────────────────────────────────────────────────────────
+
+model User {
+  id            String        @id @default(uuid())
+  email         String        @unique
+  phone         String?       @unique
+  firstName     String?
+  lastName      String?
+  avatarUrl     String?
+  role          UserRole      @default(PASSENGER)
+  isVerified    Boolean       @default(false)
+  isActive      Boolean       @default(true)
+  language      String        @default("fr")
+  fcmToken      String?
+  accountStatus AccountStatus @default(EMAIL_NOT_VERIFIED)
+
+  // Auth OTP (V2)
+  otpCode      String?
+  otpExpiresAt DateTime?
+  otpAttempts  Int      @default(0)
+  refreshToken String?
+
+  // Face verification (V1)
+  faceVerified Boolean @default(false)
+  faceImageUrl String?
+
+  // Métadonnées
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  driverProfile   DriverProfile?
+  passengerRides  Ride[]         @relation("PassengerRides")
+  driverRides     Ride[]         @relation("DriverRides")
+  sentMessages    Message[]      @relation("SentMessages")
+  notifications   Notification[]
+  reviewsGiven    Review[]       @relation("ReviewsGiven")
+  reviewsReceived Review[]       @relation("ReviewsReceived")
+  payments        Payment[]
+  wallet          Wallet?
+  transactions    Transaction[]
+  documents       Document[]
+  savedPlaces     SavedPlace[]
+
+  @@map("users")
+}
+
+// ─── Driver Profile (V1 style, enrichi) ───────────────────────────────────
+
+model DriverProfile {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  vehicleType  VehicleType @default(MOTO)
+  vehicleMake  String?
+  vehicleModel String?
+  vehicleYear  Int?
+  licensePlate String?     @unique
+  vehicleColor String?
+
+  // Vérification step-by-step (V1)
+  faceVerified        Boolean   @default(false)
+  faceVerifiedAt      DateTime?
+  documentsUploaded   Boolean   @default(false)
+  documentsUploadedAt DateTime?
+  adminApproved       Boolean   @default(false)
+  adminApprovedAt     DateTime?
+  adminNotes          String?
+
+  // Disponibilité
+  isOnline       Boolean @default(false)
+  currentLat     Float?
+  currentLng     Float?
+  heading        Float?
+  lastLocationAt DateTime?
+
+  // Stats
+  totalRides    Int   @default(0)
+  totalEarnings Float @default(0)
+  rating        Float @default(0)
+  ratingCount   Int   @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isOnline, currentLat, currentLng])
+  @@map("driver_profiles")
+}
+
+// ─── Documents (V1) ────────────────────────────────────────────────────────
+
+model Document {
+  id              String         @id @default(uuid())
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            DocumentType
+  fileUrl         String
+  status          DocumentStatus @default(PENDING)
+  rejectionReason String?
+  uploadedAt      DateTime       @default(now())
+  reviewedAt      DateTime?
+  reviewedBy      String?
+
+  @@index([status, uploadedAt])
+  @@map("documents")
+}
+
+// ─── Wallet (V1) ───────────────────────────────────────────────────────────
+
+model Wallet {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance   Float    @default(0.0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("wallets")
+}
+
+model Transaction {
+  id              String            @id @default(uuid())
+  userId          String
+  user            User              @relation(fields: [userId], references: [id])
+  type            TransactionType
+  amount          Float
+  status          TransactionStatus @default(PENDING)
+  rideId          String?
+  paymentMethod   PaymentMethod?
+  stripePaymentId String?
+  reference       String?
+  rejectionReason String?
+  createdAt       DateTime          @default(now())
+  completedAt     DateTime?
+
+  @@index([userId, createdAt])
+  @@map("transactions")
+}
+
+// ─── Rides ─────────────────────────────────────────────────────────────────
+
+model Ride {
+  id          String      @id @default(uuid())
+  serviceType ServiceType @default(VTC)
+
+  passengerId String
+  passenger   User    @relation("PassengerRides", fields: [passengerId], references: [id])
+  driverId    String?
+  driver      User?   @relation("DriverRides", fields: [driverId], references: [id])
+
+  // Lieux
+  pickupAddress  String?
+  pickupLat      Float
+  pickupLng      Float
+  dropoffAddress String?
+  dropoffLat     Float
+  dropoffLng     Float
+
+  // Arrêts intermédiaires
+  waypoints Json?
+
+  // Options confort (V1)
+  airConditioning Boolean @default(false)
+  wifi            Boolean @default(false)
+  usb             Boolean @default(false)
+  music           Boolean @default(false)
+
+  // Détails course
+  status         RideStatus    @default(REQUESTED)
+  vehicleType    VehicleType   @default(MOTO)
+  estimatedPrice Float
+  finalPrice     Float?
+  distanceKm     Float?
+  durationMin    Int?
+  pinCode        String
+
+  // Paiement
+  paymentMethod PaymentMethod @default(CASH)
+  isPaid        Boolean       @default(false)
+  payment       Payment?
+
+  // Course planifiée
+  scheduledAt DateTime?
+
+  // Partage
+  shareToken String? @unique
+
+  // Livraison (V1)
+  senderName     String?
+  senderPhone    String?
+  recipientName  String?
+  recipientPhone String?
+  parcelSize     ParcelSize?
+  parcelDesc     String?
+  deliveryNote   String?
+
+  // Timestamps
+  requestedAt DateTime  @default(now())
+  acceptedAt  DateTime?
+  arrivedAt   DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+  cancelReason String?
+
+  // Évaluation
+  passengerRating  Float?
+  driverRating     Float?
+  passengerComment String?
+  driverComment    String?
+
+  messages Message[]
+  reviews  Review[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([passengerId, requestedAt])
+  @@index([driverId, requestedAt])
+  @@index([status, serviceType])
+  @@map("rides")
+}
+
+// ─── Payments ──────────────────────────────────────────────────────────────
+
+model Payment {
+  id            String        @id @default(uuid())
+  rideId        String        @unique
+  ride          Ride          @relation(fields: [rideId], references: [id])
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+  amount        Float
+  currency      String        @default("XOF")
+  method        PaymentMethod
+  status        PaymentStatus @default(PENDING)
+  externalRef   String?
+  failureReason String?
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("payments")
+}
+
+// ─── Messages ──────────────────────────────────────────────────────────────
+
+model Message {
+  id        String      @id @default(uuid())
+  rideId    String
+  ride      Ride        @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User        @relation("SentMessages", fields: [senderId], references: [id])
+  content   String
+  type      MessageType @default(TEXT)
+  isRead    Boolean     @default(false)
+  readAt    DateTime?
+  createdAt DateTime    @default(now())
+
+  @@map("messages")
+}
+
+// ─── Reviews ───────────────────────────────────────────────────────────────
+
+model Review {
+  id        String   @id @default(uuid())
+  rideId    String
+  ride      Ride     @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation("ReviewsGiven", fields: [authorId], references: [id])
+  targetId  String
+  target    User     @relation("ReviewsReceived", fields: [targetId], references: [id])
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@unique([rideId, authorId])
+  @@map("reviews")
+}
+
+// ─── Notifications ─────────────────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// ─── Saved Places (V1) ─────────────────────────────────────────────────────
+
+model SavedPlace {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String
+  address   String
+  lat       Float
+  lng       Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("saved_places")
+}
