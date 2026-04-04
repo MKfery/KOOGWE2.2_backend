@@ -9,12 +9,12 @@ export class MailService {
   private readonly from: string;
 
   constructor(private config: ConfigService) {
-    this.apiKey = config.get<string>('RESEND_API_KEY');
-    this.from   = config.get<string>('MAIL_FROM') ?? 'Koogwe <onboarding@resend.dev>';
+    // Lire via ConfigService ET process.env en fallback
+    this.apiKey = config.get<string>('RESEND_API_KEY') || process.env.RESEND_API_KEY;
+    this.from   = config.get<string>('MAIL_FROM') || process.env.MAIL_FROM || 'Koogwe <onboarding@resend.dev>';
 
-    // DEBUG temporaire
     this.logger.log(`🔑 RESEND_API_KEY présente: ${!!this.apiKey}`);
-    this.logger.log(`🔑 RESEND_API_KEY valeur: ${this.apiKey ? this.apiKey.substring(0, 8) + '...' : 'VIDE'}`);
+    this.logger.log(`🔑 Valeur début: ${this.apiKey ? this.apiKey.substring(0, 8) + '...' : 'VIDE'}`);
     this.logger.log(`📧 MAIL_FROM: ${this.from}`);
 
     if (this.apiKey) {
