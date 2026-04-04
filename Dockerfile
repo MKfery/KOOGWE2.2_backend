@@ -1,7 +1,7 @@
 FROM node:20-alpine
 
-# Dépendance native requise par certains packages
-RUN apk add --no-cache libatomic
+# OpenSSL 1.1 requis par Prisma + libatomic
+RUN apk add --no-cache libatomic openssl openssl-dev libc6-compat
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ COPY prisma ./prisma/
 # Installer les dépendances
 RUN npm ci
 
-# Générer le client Prisma
+# Générer le client Prisma avec le bon binaire pour Alpine
 RUN npx prisma generate
 
 # Copier le reste du code
