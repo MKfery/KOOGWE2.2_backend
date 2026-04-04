@@ -12,19 +12,28 @@ export class MailService {
     this.apiKey = config.get<string>('RESEND_API_KEY');
     this.from   = config.get<string>('MAIL_FROM') ?? 'Koogwe <onboarding@resend.dev>';
 
+    // DEBUG temporaire
+    this.logger.log(`🔑 RESEND_API_KEY présente: ${!!this.apiKey}`);
+    this.logger.log(`🔑 RESEND_API_KEY valeur: ${this.apiKey ? this.apiKey.substring(0, 8) + '...' : 'VIDE'}`);
+    this.logger.log(`📧 MAIL_FROM: ${this.from}`);
+
     if (this.apiKey) {
       this.logger.log('✅ Resend API configuré');
     } else {
-      this.logger.warn('⚠️ RESEND_API_KEY manquant — emails loggués uniquement');
+      this.logger.warn('⚠️ RESEND_API_KEY manquant — vérifiez les variables Railway');
     }
   }
 
   private async send(to: string, subject: string, html: string): Promise<void> {
     if (!this.apiKey) {
-      this.logger.log(`[EMAIL LOG] To: ${to} | Subject: ${subject}`);
+      this.logger.warn(`⚠️ Email NON envoyé (pas de clé API) → To: ${to} | Subject: ${subject}`);
+      this.logger.warn('👉 Ajoutez RESEND_API_KEY dans les variables Railway et redéployez');
       return;
     }
+
     try {
+      this.logger.log(`📤 Envoi email via Resend → ${to}`);
+
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -34,14 +43,16 @@ export class MailService {
         body: JSON.stringify({ from: this.from, to, subject, html }),
       });
 
+      const responseText = await res.text();
+
       if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`Resend API error ${res.status}: ${err}`);
+        this.logger.error(`❌ Resend API erreur ${res.status}: ${responseText}`);
+        throw new Error(`Resend API error ${res.status}: ${responseText}`);
       }
 
-      this.logger.log(`✅ Email envoyé à ${to}`);
+      this.logger.log(`✅ Email envoyé avec succès à ${to} | Réponse: ${responseText}`);
     } catch (error) {
-      this.logger.error(`Échec envoi email à ${to}: ${error.message}`);
+      this.logger.error(`❌ Échec envoi email à ${to}: ${error.message}`);
       throw error;
     }
   }
