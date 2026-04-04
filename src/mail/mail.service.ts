@@ -1,56 +1,50 @@
 // src/mail/mail.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
-  private readonly apiKey: string | undefined;
+  private transporter: nodemailer.Transporter;
   private readonly from: string;
 
   constructor(private config: ConfigService) {
-    // Lire via ConfigService ET process.env en fallback
-    this.apiKey = config.get<string>('RESEND_API_KEY') || process.env.RESEND_API_KEY;
-    this.from   = config.get<string>('MAIL_FROM') || process.env.MAIL_FROM || 'Koogwe <onboarding@resend.dev>';
+    const mailUser = config.get<string>('MAIL_USER') || process.env.MAIL_USER;
+    const mailPass = config.get<string>('MAIL_PASS') || process.env.MAIL_PASS;
+    const mailSecure = config.get<string>('MAIL_SECURE') || process.env.MAIL_SECURE;
+    this.from = `Koogwe <${mailUser}>`;
 
-    this.logger.log(`🔑 RESEND_API_KEY présente: ${!!this.apiKey}`);
-    this.logger.log(`🔑 Valeur début: ${this.apiKey ? this.apiKey.substring(0, 8) + '...' : 'VIDE'}`);
-    this.logger.log(`📧 MAIL_FROM: ${this.from}`);
+    this.transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: mailSecure === 'true' ? 465 : 587,
+      secure: mailSecure === 'true',
+      auth: {
+        user: mailUser,
+        pass: mailPass,
+      },
+    });
 
-    if (this.apiKey) {
-      this.logger.log('✅ Resend API configuré');
-    } else {
-      this.logger.warn('⚠️ RESEND_API_KEY manquant — vérifiez les variables Railway');
-    }
+    // Vérifier la connexion SMTP au démarrage
+    this.transporter.verify((error) => {
+      if (error) {
+        this.logger.error(`❌ SMTP Gmail non connecté: ${error.message}`);
+      } else {
+        this.logger.log(`✅ SMTP Gmail connecté — prêt à envoyer depuis ${mailUser}`);
+      }
+    });
   }
 
   private async send(to: string, subject: string, html: string): Promise<void> {
-    if (!this.apiKey) {
-      this.logger.warn(`⚠️ Email NON envoyé (pas de clé API) → To: ${to} | Subject: ${subject}`);
-      this.logger.warn('👉 Ajoutez RESEND_API_KEY dans les variables Railway et redéployez');
-      return;
-    }
-
     try {
-      this.logger.log(`📤 Envoi email via Resend → ${to}`);
-
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ from: this.from, to, subject, html }),
+      this.logger.log(`📤 Envoi email → ${to}`);
+      const info = await this.transporter.sendMail({
+        from: this.from,
+        to,
+        subject,
+        html,
       });
-
-      const responseText = await res.text();
-
-      if (!res.ok) {
-        this.logger.error(`❌ Resend API erreur ${res.status}: ${responseText}`);
-        throw new Error(`Resend API error ${res.status}: ${responseText}`);
-      }
-
-      this.logger.log(`✅ Email envoyé avec succès à ${to} | Réponse: ${responseText}`);
+      this.logger.log(`✅ Email envoyé à ${to} | MessageId: ${info.messageId}`);
     } catch (error) {
       this.logger.error(`❌ Échec envoi email à ${to}: ${error.message}`);
       throw error;
