@@ -42,7 +42,7 @@ export class AuthService {
       );
     }
 
-    const otpCode = this.generateOtp();
+    const otpCode = this.config.get('DISABLE_EMAIL_OTP') === 'true' ? '123456' : this.generateOtp();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await this.prisma.user.upsert({
@@ -52,13 +52,17 @@ export class AuthService {
     });
 
     // ✅ FIX V2: mail non-bloquant — si SMTP down, l'inscription ne plante pas
-    try {
-      await this.mail.sendOtp(email, otpCode, language);
-    } catch (e) {
-      this.logger.error(`Échec envoi OTP à ${email}: ${e.message}`);
-      // En dev, log le code pour pouvoir tester
-      if (process.env.NODE_ENV !== 'production') {
-        this.logger.warn(`[DEV] OTP pour ${email}: ${otpCode}`);
+    if (this.config.get('DISABLE_EMAIL_OTP') === 'true') {
+      this.logger.warn(`[PAUSED] OTP pour ${email}: ${otpCode}`);
+    } else {
+      try {
+        await this.mail.sendOtp(email, otpCode, language);
+      } catch (e) {
+        this.logger.error(`Échec envoi OTP à ${email}: ${e.message}`);
+        // En dev, log le code pour pouvoir tester
+        if (process.env.NODE_ENV !== 'production') {
+          this.logger.warn(`[DEV] OTP pour ${email}: ${otpCode}`);
+        }
       }
     }
 
