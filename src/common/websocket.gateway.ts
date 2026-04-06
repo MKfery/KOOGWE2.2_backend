@@ -75,6 +75,8 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Stocker l'userId sur le socket pour ne plus avoir à re-décoder
     (client as any).userId = userId;
     this.connectedUsers.set(userId, client.id);
+    // Rejoindre une room personnelle pour pouvoir cibler ce client via emitToUser
+    client.join(`user:${userId}`);
     this.logger.log(`✅ Connecté : userId=${userId} | socket=${client.id}`);
   }
 
@@ -82,6 +84,11 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = (client as any).userId;
     if (userId) this.connectedUsers.delete(userId);
     this.logger.log(`❌ Déconnecté : socket=${client.id}`);
+  }
+
+  // ─── Émettre un événement ciblé à un utilisateur spécifique ────────────────
+  emitToUser(userId: string, event: string, data: any) {
+    this.server.to(`user:${userId}`).emit(event, data);
   }
 
   // ─── CHAUFFEUR : mise à jour GPS ──────────────────────────────────────────
