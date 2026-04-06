@@ -54,9 +54,11 @@ async function bootstrap() {
   // ── CORS — liste blanche + mobiles Flutter sans Origin ────────────────────
   const allowedOrigins: string[] = [
     'http://localhost:3000',
+    'http://localhost:3001',
     'http://localhost:5173',
     'http://localhost:8080',
     'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
     'http://10.0.2.2:3000',
   ];
   if (process.env.FRONTEND_URL) allowedOrigins.push(process.env.FRONTEND_URL.trim());
