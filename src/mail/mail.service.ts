@@ -39,6 +39,28 @@ export class MailService {
     await this.sendEmail(email, subject, html);
   }
 
+  async sendDriverApproved(email: string, firstName: string, language = 'fr') {
+    const subject = language === 'fr' ? 'Compte chauffeur approuvé ✅' : 'Driver account approved ✅';
+    const html = `
+      <h1>Félicitations ${firstName} !</h1>
+      <p>Votre compte chauffeur a été approuvé. Vous pouvez maintenant vous connecter et accepter des courses.</p>
+    `;
+    await this.sendEmail(email, subject, html);
+    this.logger.log(`Email approbation envoyé à ${email}`);
+  }
+
+  async sendDriverRejected(email: string, firstName: string, reason?: string, language = 'fr') {
+    const subject = language === 'fr' ? 'Compte chauffeur refusé ❌' : 'Driver account rejected ❌';
+    const html = `
+      <h1>Bonjour ${firstName},</h1>
+      <p>Votre demande de compte chauffeur a été refusée pour la raison suivante :</p>
+      <blockquote>${reason ?? 'Non précisée'}</blockquote>
+      <p>Veuillez contacter le support pour plus d'informations.</p>
+    `;
+    await this.sendEmail(email, subject, html);
+    this.logger.log(`Email refus envoyé à ${email}`);
+  }
+
   async sendDriverValidation(email: string, approved: boolean, language = 'fr') {
     const subject = approved ? 'Compte chauffeur validé' : 'Compte chauffeur refusé';
     const html = approved ? '<h1>Votre compte est validé !</h1>' : '<h1>Votre compte a été refusé.</h1>';
