@@ -118,6 +118,22 @@ export class AdminController {
   @Get('config/pricing')
   getPricing() { return this.adminService.getPricingConfig(); }
 
+  @Patch('config/pricing')
+  updatePricing(@Body() body: any) { return this.adminService.updatePricingConfig(body); }
+
+  // ─── Estimation de prix ────────────────────────────────────────────────────
+  @Post('estimate-price')
+  estimatePrice(@Body() body: {
+    distanceKm: number;
+    durationMin: number;
+    vehicleType?: string;
+    zone?: string;
+    timeOfDay?: string;
+    trafficLevel?: string;
+    weatherCondition?: string;
+    demandLevel?: string;
+  }) { return this.adminService.estimatePrice(body); }
+
   // ─── Activité ──────────────────────────────────────────────────────────────
   @Get('activity/logins')
   getLoginActivity() { return this.adminService.getLoginActivity(); }

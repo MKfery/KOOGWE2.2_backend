@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { UsersService, UpdateProfileDto, UpdateVehicleDto } from './users.service';
+import { join } from 'path';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 
 @ApiTags('Users')
 @ApiBearerAuth()
@@ -16,10 +18,44 @@ export class UsersController {
   @ApiOperation({ summary: 'Profil complet' })
   getMe(@Req() req: any) { return this.usersService.findById(req.user.id); }
 
-  @Patch('profile')
+  @Patch('me')
   @ApiOperation({ summary: 'Mettre à jour le profil' })
+  updateMe(@Req() req: any, @Body() dto: UpdateProfileDto) {
+    return this.usersService.updateProfile(req.user.id, dto);
+  }
+
+  @Patch('profile')
+  @ApiOperation({ summary: 'Mettre à jour le profil (alias)' })
   updateProfile(@Req() req: any, @Body() dto: UpdateProfileDto) {
     return this.usersService.updateProfile(req.user.id, dto);
+  }
+
+  // ── Upload avatar base64 ────────────────────────────────────────────────────
+  @Post('me/avatar')
+  @ApiOperation({ summary: 'Upload photo de profil (base64)' })
+  async uploadAvatar(@Req() req: any, @Body() body: { imageBase64: string }) {
+    const userId = req.user.id;
+    const base64 = body.imageBase64;
+    if (!base64) return { error: 'imageBase64 requis' };
+
+    const matches = base64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    const ext  = matches ? (matches[1].includes('png') ? 'png' : 'jpg') : 'jpg';
+    const rawData = matches ? matches[2] : base64;
+
+    const dir = join(process.cwd(), 'uploads', 'avatars', userId);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+
+    const fileName = `avatar_${Date.now()}.${ext}`;
+    writeFileSync(join(dir, fileName), Buffer.from(rawData, 'base64'));
+
+    const baseUrl = process.env.PUBLIC_BASE_URL ||
+      (process.env.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+        : 'http://localhost:3000');
+
+    const avatarUrl = `${baseUrl}/uploads/avatars/${userId}/${fileName}`;
+    await this.usersService.updateProfile(userId, { avatarUrl });
+    return { avatarUrl };
   }
 
   @Patch('vehicle')

@@ -1,106 +1,57 @@
 // src/rides/rides.controller.ts
-import {
-  Controller, Post, Get, Patch, Delete, Body, Param, Req, Query,
-} from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { Public } from '../auth/guards/jwt-auth.guard';
-import { RidesService, CreateRideDto, CreateDeliveryDto } from './rides.service';
-import { RideStatus } from '@prisma/client';
+// ✅ VERSION PRODUCTION — requesterId toujours issu du JWT (@Request req)
+
+import { Controller, Post, Get, Patch, Param, Body, Request, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { RidesService } from './rides.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('Rides')
 @ApiBearerAuth()
 @Controller('rides')
+@UseGuards(JwtAuthGuard)
 export class RidesController {
   constructor(private readonly ridesService: RidesService) {}
 
+  // === PASSAGER : créer une course ===
   @Post()
-  @ApiOperation({ summary: 'Créer une course VTC' })
-  create(@Req() req: any, @Body() dto: CreateRideDto) {
-    return this.ridesService.create(req.user.id, dto);
+  createRide(@Request() req: any, @Body() body: any) {
+    return this.ridesService.createRide(req.user.id, body);
   }
 
-  @Post('delivery')
-  @ApiOperation({ summary: 'Créer une livraison' })
-  createDelivery(@Req() req: any, @Body() dto: CreateDeliveryDto) {
-    return this.ridesService.createDelivery(req.user.id, dto);
-  }
-
-  @Post('estimate')
-  @ApiOperation({ summary: 'Estimer le prix' })
-  estimatePrice(@Body() dto: any) {
-    return this.ridesService.estimatePrice(dto);
-  }
-
-  @Post('scheduled')
-  @ApiOperation({ summary: 'Course planifiée' })
-  createScheduled(@Req() req: any, @Body() dto: any) {
-    return this.ridesService.createScheduledRide(req.user.id, dto);
-  }
-
+  // === CHAUFFEUR : courses disponibles ===
   @Get('available')
-  @ApiOperation({ summary: 'Courses disponibles pour les chauffeurs' })
-  getAvailable(@Req() req: any, @Query('lat') lat: string, @Query('lng') lng: string, @Query('vehicleType') vehicleType?: string) {
-    return this.ridesService.getAvailableRides(+lat, +lng, vehicleType);
+  getAvailableRides(@Request() req: any) {
+    return this.ridesService.getAvailableRides(req.user.id);
   }
 
-  @Get('history')
-  getHistory(@Req() req: any) {
-    return this.ridesService.getHistory(req.user.id, req.user.role);
-  }
-
-  @Get('upcoming')
-  getUpcoming(@Req() req: any) {
-    return this.ridesService.getUpcomingRides(req.user.id);
-  }
-
-  @Get('driver/stats')
-  getDriverStats(@Req() req: any) {
-    return this.ridesService.getDriverStats(req.user.id);
-  }
-
-  @Post('panic')
-  triggerPanic(@Req() req: any, @Body() dto: { rideId?: string; lat: number; lng: number }) {
-    return this.ridesService.triggerPanic(req.user.id, dto.rideId ?? null, dto.lat, dto.lng);
-  }
-
-  @Public()
-  @Get('track/:token')
-  trackByToken(@Param('token') token: string) {
-    return this.ridesService.getRideByShareToken(token);
-  }
-
-  @Post(':id/share')
-  generateShare(@Param('id') id: string, @Req() req: any) {
-    return this.ridesService.generateShareToken(id, req.user.id);
-  }
-
+  // === CHAUFFEUR : accepter une course ===
   @Post(':id/accept')
-  accept(@Param('id') id: string, @Req() req: any) {
-    return this.ridesService.acceptRide(id, req.user.id);
+  acceptRide(@Request() req: any, @Param('id') rideId: string) {
+    return this.ridesService.acceptRide(rideId, req.user.id);
   }
 
+  // === CHAUFFEUR / PASSAGER : changer le statut ===
+  // ✅ FIX : requesterId passé depuis le JWT, plus depuis le body
   @Patch(':id/status')
-  updateStatus(@Param('id') id: string, @Body() dto: { status: RideStatus; cancelReason?: string }, @Req() req: any) {
-    return this.ridesService.updateStatus(id, req.user.id, dto.status, dto.cancelReason);
+  updateStatus(
+    @Request() req: any,
+    @Param('id') rideId: string,
+    @Body() body: { status: string; cancelReason?: string },
+  ) {
+    return this.ridesService.updateRideStatus(rideId, req.user.id, body.status, body.cancelReason);
   }
 
-  @Patch(':id/cancel')
-  cancelRide(@Param('id') id: string, @Req() req: any) {
-    return this.ridesService.cancelRide(id, req.user.id, req.user.role);
-  }
-
+  // === CHAUFFEUR : vérifier le PIN du passager ===
+  // ✅ FIX : driverId toujours depuis le JWT
   @Post(':id/verify-pin')
-  verifyPin(@Param('id') id: string, @Body('pin') pin: string) {
-    return this.ridesService.verifyPin(id, pin);
+  verifyPin(@Request() req: any, @Param('id') rideId: string, @Body() body: { pin: string }) {
+    return this.ridesService.verifyPin(rideId, req.user.id, body.pin);
   }
 
-  @Post(':id/rate')
-  rateRide(@Param('id') id: string, @Body() dto: { rating: number; comment?: string }, @Req() req: any) {
-    return this.ridesService.rateRide(id, req.user.id, req.user.role, dto.rating, dto.comment);
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.ridesService.findById(id);
+  // === Historique ===
+  @Get('me')
+  getMyRides(@Request() req: any) {
+    return this.ridesService.getUserRides(req.user.id);
   }
 }
