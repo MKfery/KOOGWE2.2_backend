@@ -12,10 +12,9 @@ import { DriversModule } from './drivers/drivers.module';
 import { RidesModule } from './rides/rides.module';
 import { AdminModule } from './admin/admin.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
+import { WalletModule } from './wallet/wallet.module';
 
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
-import { AppGateway } from './common/websocket.gateway';
-import { JwtModule } from '@nestjs/jwt';
 
 @Module({
   imports: [
@@ -42,21 +41,17 @@ import { JwtModule } from '@nestjs/jwt';
     // 3. Core & Infrastructure
     PrismaModule,
     MailModule,
-    CloudinaryModule,           // ← Cloudinary pour les photos de visage et documents
+    CloudinaryModule,
 
-    // 4. JWT (global)
-    JwtModule.register({
-      global: true,
-      secret: process.env.JWT_SECRET,
-      signOptions: { expiresIn: '7d' },
-    }),
-
-    // 5. Feature Modules
+    // 4. Feature Modules
+    // ⚠️ AuthModule enregistre JwtModule avec JWT_ACCESS_SECRET via ConfigService
+    // Ne pas ajouter un second JwtModule.register ici — cela crée un conflit
     AuthModule,
     UsersModule,
-    DriversModule,      // ← Contient maintenant FaceVerification
+    DriversModule,
     RidesModule,
     AdminModule,
+    WalletModule,
   ],
   providers: [
     // Global Guards
@@ -68,9 +63,8 @@ import { JwtModule } from '@nestjs/jwt';
       provide: APP_GUARD,
       useClass: ThrottlerGuard,    // Protection anti-brute force
     },
-
-    // WebSocket Gateway
-    AppGateway,
+    // ⚠️ AppGateway ne doit PAS être déclaré ici — il est fourni par CommonModule
+    // importé dans RidesModule → évite les instances dupliquées
   ],
 })
 export class AppModule {}
