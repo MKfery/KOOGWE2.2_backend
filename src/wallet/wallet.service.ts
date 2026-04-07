@@ -149,10 +149,15 @@ export class WalletService {
       where: { userId: resolvedUserId },
       data: { balance: { increment: amount } },
     });
-    await this.prisma.transaction.create({
-      data: { userId: resolvedUserId, type: 'RECHARGE', amount, status: 'COMPLETED', stripePaymentId: paymentIntentId },
-    });
-
+  await this.prisma.transaction.create({
+  data: { 
+    userId: resolvedUserId, 
+    type: 'RECHARGE', 
+    amount, 
+    status: 'COMPLETED', 
+    externalRef: paymentIntentId,   // ← Utilise externalRef au lieu de stripePaymentId
+  },
+});
     return { success: true, balance: wallet.balance };
   }
 }

@@ -2,11 +2,12 @@
 import { Module } from '@nestjs/common';
 import { FaceVerificationController } from './face-verification.controller';
 import { FaceVerificationService } from './face-verification.service';
-import { AWSRekognitionService } from './aws-rekognition.service';
+import { CloudinaryModule } from '../cloudinary/cloudinary.module';
 
 @Module({
+  imports: [CloudinaryModule],
   controllers: [FaceVerificationController],
-  providers: [FaceVerificationService, AWSRekognitionService],
-  exports: [FaceVerificationService, AWSRekognitionService],
+  providers: [FaceVerificationService],
+  exports: [FaceVerificationService],
 })
 export class FaceVerificationModule {}

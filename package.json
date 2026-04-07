@@ -8,13 +8,12 @@
   "scripts": {
     "build": "nest build",
     "postinstall": "prisma generate",
-    "start": "npx prisma db push --skip-generate && node dist/main",
+    "start": "node dist/main",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
     "prisma:generate": "prisma generate",
-    "prisma:push": "prisma db push",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "deploy": "prisma migrate deploy && npm run start:prod",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix"
   },
   "dependencies": {
@@ -35,8 +34,10 @@
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
+    "cloudinary": "^2.9.0",
     "dotenv": "^16.4.5",
     "express": "^4.18.0",
+    "helmet": "^7.2.0",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.13",
     "passport": "^0.7.0",

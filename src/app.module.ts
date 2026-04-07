@@ -10,50 +10,66 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { DriversModule } from './drivers/drivers.module';
 import { RidesModule } from './rides/rides.module';
-import { AdminModule } from './admin/admin.module';      // ✅ NOUVEAU
+import { AdminModule } from './admin/admin.module';
+import { CloudinaryModule } from './cloudinary/cloudinary.module';
+
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { AppGateway } from './common/websocket.gateway';
 import { JwtModule } from '@nestjs/jwt';
 
 @Module({
   imports: [
-    // Config global
-    ConfigModule.forRoot({ isGlobal: true }),
+    // 1. Configuration globale (doit être en premier)
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
 
-    // Rate limiting (anti-spam OTP)
+    // 2. Rate Limiting
     ThrottlerModule.forRoot([
       {
         name: 'short',
-        ttl: 60000,
+        ttl: 60000,      // 1 minute
         limit: 10,
       },
       {
         name: 'medium',
-        ttl: 600000,
+        ttl: 600000,     // 10 minutes
         limit: 30,
       },
     ]),
 
-    // Core
+    // 3. Core & Infrastructure
     PrismaModule,
     MailModule,
+    CloudinaryModule,           // ← Cloudinary pour les photos de visage et documents
 
-    // JWT pour le WebSocket Gateway
-    JwtModule.register({}),
+    // 4. JWT (global)
+    JwtModule.register({
+      global: true,
+      secret: process.env.JWT_SECRET,
+      signOptions: { expiresIn: '7d' },
+    }),
 
-    // Feature modules
+    // 5. Feature Modules
     AuthModule,
     UsersModule,
-    DriversModule,
+    DriversModule,      // ← Contient maintenant FaceVerification
     RidesModule,
-    AdminModule,    // ✅ NOUVEAU
+    AdminModule,
   ],
   providers: [
-    // Guard JWT global (toutes les routes protégées par défaut)
-    { provide: APP_GUARD, useClass: JwtAuthGuard },
-    // Rate limiting global
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
-    // WebSocket
+    // Global Guards
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,      // Protège toutes les routes par défaut
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,    // Protection anti-brute force
+    },
+
+    // WebSocket Gateway
     AppGateway,
   ],
 })
