@@ -1,14 +1,18 @@
 // src/auth/auth.service.ts
 import {
-  Injectable, BadRequestException, UnauthorizedException,
-  HttpException, HttpStatus, Logger,
+  Injectable,
+  BadRequestException,
+  UnauthorizedException,
+  HttpException,
+  HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
-import { SendOtpDto, VerifyOtpDto } from './dto/auth.dto';
+import { SendOtpDto, VerifyOtpDto, AdminLoginDto } from './dto/auth.dto';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
@@ -21,76 +25,83 @@ export class AuthService {
     private mail: MailService,
   ) {}
 
+  // ─── Génération OTP 6 chiffres ────────────────────────────────────────────
   private generateOtp(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
-  // ─── Envoi OTP ────────────────────────────────────────────────────────────
+  // ─── Envoi de l'OTP ───────────────────────────────────────────────────────
   async sendOtp(dto: SendOtpDto): Promise<{ message: string; expiresIn: number }> {
-    const { language = 'fr' } = dto;
-    const email = dto.email.toLowerCase().trim();
+    const { email, language = 'fr' } = dto;
+    const normalizedEmail = email.toLowerCase().trim();
 
     const existing = await this.prisma.user.findUnique({
-      where: { email },
-      select: { otpAttempts: true, otpExpiresAt: true },
+      where: { email: normalizedEmail },
+      select: { otpAttempts: true, otpExpiresAt: true, otpCode: true },
     });
 
-    if (existing?.otpAttempts >= 5 && existing?.otpExpiresAt > new Date()) {
+    if (existing?.otpAttempts >= 5 && existing?.otpExpiresAt && existing.otpExpiresAt > new Date()) {
       throw new HttpException(
-        'Trop de tentatives. Réessayez dans 10 minutes.',
+        'Trop de tentatives. Veuillez réessayer dans 10 minutes.',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
 
-    const otpCode = this.config.get('DISABLE_EMAIL_OTP') === 'true' ? '123456' : this.generateOtp();
+    const otpCode = this.generateOtp();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await this.prisma.user.upsert({
-      where: { email },
-      create: { email, otpCode, otpExpiresAt: expiresAt, otpAttempts: 0, language, accountStatus: 'EMAIL_NOT_VERIFIED' },
-      update: { otpCode, otpExpiresAt: expiresAt, otpAttempts: 0, language },
+      where: { email: normalizedEmail },
+      create: {
+        email: normalizedEmail,
+        otpCode,
+        otpExpiresAt: expiresAt,
+        otpAttempts: 0,
+        language,
+      },
+      update: {
+        otpCode,
+        otpExpiresAt: expiresAt,
+        otpAttempts: 0,
+        language,
+      },
     });
 
-    // ✅ FIX V2: mail non-bloquant — si SMTP down, l'inscription ne plante pas
-    if (this.config.get('DISABLE_EMAIL_OTP') === 'true') {
-      this.logger.warn(`[PAUSED] OTP pour ${email}: ${otpCode}`);
-    } else {
-      try {
-        await this.mail.sendOtp(email, otpCode, language);
-      } catch (e) {
-        this.logger.error(`Échec envoi OTP à ${email}: ${e.message}`);
-        // En dev, log le code pour pouvoir tester
-        if (process.env.NODE_ENV !== 'production') {
-          this.logger.warn(`[DEV] OTP pour ${email}: ${otpCode}`);
-        }
-      }
-    }
+    await this.mail.sendOtp(normalizedEmail, otpCode, language);
+    this.logger.log(`OTP envoyé à ${normalizedEmail}`);
 
     return { message: 'Code OTP envoyé par email', expiresIn: 600 };
   }
 
   // ─── Vérification OTP ─────────────────────────────────────────────────────
   async verifyOtp(dto: VerifyOtpDto) {
-    const email = dto.email.toLowerCase().trim();
+    const { email, code } = dto;
+    const normalizedEmail = email.toLowerCase().trim();
+
     const user = await this.prisma.user.findUnique({
-      where: { email },
-      include: { driverProfile: true },
+      where: { email: normalizedEmail },
+      include: { driver: true },
     });
 
-    if (!user) throw new BadRequestException('Aucun compte trouvé pour cet email');
+    if (!user) {
+      throw new BadRequestException('Aucun compte trouvé pour cet email');
+    }
 
     if (!user.otpExpiresAt || user.otpExpiresAt < new Date()) {
-      throw new BadRequestException('Le code OTP a expiré. Demandez-en un nouveau.');
+      throw new BadRequestException('Le code OTP a expiré. Veuillez en demander un nouveau.');
     }
 
     const maxAttempts = Number(this.config.get('OTP_MAX_ATTEMPTS', 5));
     if (user.otpAttempts >= maxAttempts) {
-      throw new HttpException('Trop de tentatives incorrectes. Demandez un nouveau code.', HttpStatus.TOO_MANY_REQUESTS);
+      throw new HttpException(
+        'Trop de tentatives incorrectes. Demandez un nouveau code.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
 
-    if (user.otpCode !== dto.code) {
+    if (user.otpCode !== code) {
       await this.prisma.user.update({
-        where: { email },
+        where: { email: normalizedEmail },
         data: { otpAttempts: { increment: 1 } },
       });
       const remaining = maxAttempts - user.otpAttempts - 1;
@@ -98,29 +109,26 @@ export class AuthService {
     }
 
     const isNewUser = !user.isVerified;
+
     const updatedUser = await this.prisma.user.update({
-      where: { email },
+      where: { email: normalizedEmail },
       data: {
         isVerified: true,
         otpCode: null,
         otpExpiresAt: null,
         otpAttempts: 0,
-        accountStatus: user.role === 'DRIVER' ? 'FACE_VERIFICATION_PENDING' : 'ACTIVE',
-        wallet: isNewUser ? { create: {} } : undefined,
       },
     });
 
     if (isNewUser) {
-      this.mail.sendWelcome(email, user.firstName ?? '', user.language).catch(() => {});
+      await this.mail.sendWelcome(normalizedEmail, user.firstName ?? 'là', user.language);
     }
 
     const tokens = await this.generateTokens(updatedUser.id, updatedUser.email, updatedUser.role);
 
-    // ✅ FIX V2: refresh token hashé avant stockage
-    const hashedRefresh = await bcrypt.hash(tokens.refreshToken, 10);
     await this.prisma.user.update({
       where: { id: updatedUser.id },
-      data: { refreshToken: hashedRefresh },
+      data: { refreshToken: tokens.refreshToken },
     });
 
     return {
@@ -130,13 +138,103 @@ export class AuthService {
         email: updatedUser.email,
         firstName: updatedUser.firstName,
         lastName: updatedUser.lastName,
+        avatarUrl: updatedUser.avatarUrl,
         role: updatedUser.role,
         isVerified: updatedUser.isVerified,
-        accountStatus: updatedUser.accountStatus,
         language: updatedUser.language,
-        hasDriverProfile: !!user.driverProfile,
+        hasDriver: !!user.driver,
+        driverStatus: user.driver?.status ?? null,
       },
       isNewUser,
+    };
+  }
+
+  // ─── NOUVEAU : Connexion Admin (email + mot de passe) ─────────────────────
+  async adminLogin(dto: AdminLoginDto) {
+    const { email, password } = dto;
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Trouver l'utilisateur
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        isActive: true,
+        isVerified: true,
+        avatarUrl: true,
+        language: true,
+        // Le mot de passe est stocké dans otpCode temporairement
+        // OU on utilise une variable d'environnement ADMIN_PASSWORD
+        otpCode: true,
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Identifiants invalides');
+    }
+
+    // Vérifier que c'est bien un ADMIN
+    if (user.role !== 'ADMIN') {
+      throw new UnauthorizedException('Accès réservé aux administrateurs');
+    }
+
+    if (!user.isActive) {
+      throw new UnauthorizedException('Ce compte est désactivé');
+    }
+
+    // ── Vérification du mot de passe ──────────────────────────────────────
+    // Stratégie : on compare avec la variable d'env ADMIN_PASSWORD
+    // (simple et sécurisé pour un seul admin)
+    const adminPassword = this.config.get<string>('ADMIN_PASSWORD');
+
+    if (!adminPassword) {
+      this.logger.error('ADMIN_PASSWORD non configuré dans les variables d\'environnement !');
+      throw new UnauthorizedException('Configuration serveur incomplète');
+    }
+
+    // Comparer le mot de passe fourni avec celui stocké
+    // Support bcrypt hash ET mot de passe en clair (pour la migration)
+    let passwordValid = false;
+    if (adminPassword.startsWith('$2b$') || adminPassword.startsWith('$2a$')) {
+      // Mot de passe hashé avec bcrypt
+      passwordValid = await bcrypt.compare(password, adminPassword);
+    } else {
+      // Mot de passe en clair (à éviter en production, mais fonctionnel pour démarrer)
+      passwordValid = password === adminPassword;
+    }
+
+    if (!passwordValid) {
+      throw new UnauthorizedException('Identifiants invalides');
+    }
+
+    // Générer les tokens
+    const tokens = await this.generateTokens(user.id, user.email, user.role);
+
+    // Sauvegarder le refresh token
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken: tokens.refreshToken },
+    });
+
+    this.logger.log(`✅ Connexion admin: ${normalizedEmail}`);
+
+    return {
+      token: tokens.accessToken,        // ← clé "token" pour compatibilité avec l'admin web
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'Administrateur',
+        firstName: user.firstName,
+        lastName: user.lastName,
+        avatarUrl: user.avatarUrl,
+        role: user.role,
+      },
     };
   }
 
@@ -147,17 +245,17 @@ export class AuthService {
       select: { id: true, email: true, role: true, refreshToken: true, isActive: true },
     });
 
-    if (!user || !user.isActive || !user.refreshToken) {
+    if (!user || !user.isActive || user.refreshToken !== refreshToken) {
       throw new UnauthorizedException('Session expirée. Veuillez vous reconnecter.');
     }
 
-    // ✅ FIX V2: comparer avec hash
-    const isValid = await bcrypt.compare(refreshToken, user.refreshToken);
-    if (!isValid) throw new UnauthorizedException('Session expirée. Veuillez vous reconnecter.');
-
     const tokens = await this.generateTokens(user.id, user.email, user.role);
-    const hashedRefresh = await bcrypt.hash(tokens.refreshToken, 10);
-    await this.prisma.user.update({ where: { id: user.id }, data: { refreshToken: hashedRefresh } });
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken: tokens.refreshToken },
+    });
+
     return tokens;
   }
 
@@ -169,14 +267,18 @@ export class AuthService {
     });
   }
 
-  // ─── FCM Token ────────────────────────────────────────────────────────────
+  // ─── Mise à jour FCM token ────────────────────────────────────────────────
   async updateFcmToken(userId: string, fcmToken: string): Promise<void> {
-    await this.prisma.user.update({ where: { id: userId }, data: { fcmToken } });
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { fcmToken },
+    });
   }
 
-  // ─── Génération tokens JWT ────────────────────────────────────────────────
+  // ─── Génération des tokens JWT ────────────────────────────────────────────
   private async generateTokens(userId: string, email: string, role: string) {
     const payload = { sub: userId, email, role };
+
     const [accessToken, refreshToken] = await Promise.all([
       this.jwt.signAsync(payload, {
         secret: this.config.get('JWT_ACCESS_SECRET'),
@@ -187,6 +289,7 @@ export class AuthService {
         expiresIn: this.config.get('JWT_REFRESH_EXPIRES_IN', '30d'),
       }),
     ]);
+
     return { accessToken, refreshToken };
   }
 }

@@ -2,21 +2,12 @@
 import { Module } from '@nestjs/common';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
-import { AppGateway } from '../common/websocket.gateway';
-import { MailModule } from '../mail/mail.module';
 import { PrismaModule } from '../prisma/prisma.module';
-import { JwtModule } from '@nestjs/jwt';
+import { MailModule } from '../mail/mail.module';
 
 @Module({
-  imports: [
-    MailModule,
-    PrismaModule,
-    JwtModule.register({
-      secret: process.env.JWT_ACCESS_SECRET,
-    }),
-  ],
+  imports: [PrismaModule, MailModule],
   controllers: [AdminController],
-  providers: [AdminService, AppGateway],
-  exports: [AdminService],
+  providers: [AdminService],
 })
 export class AdminModule {}

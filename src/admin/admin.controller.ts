@@ -1,143 +1,220 @@
 // src/admin/admin.controller.ts
 import {
-  Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards,
+  Controller,
+  Get,
+  Patch,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  ForbiddenException,
+  Req,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
-import { Roles, RolesGuard } from '../auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
-// ✅ FIX V2: @Roles au niveau du contrôleur = toutes les routes admin protégées d'un coup
+// Guard qui vérifie que l'utilisateur est bien ADMIN
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+
+@Injectable()
+class AdminGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const { user } = context.switchToHttp().getRequest();
+    if (!user || user.role !== 'ADMIN') {
+      throw new ForbiddenException('Accès réservé aux administrateurs');
+    }
+    return true;
+  }
+}
+
 @ApiTags('Admin')
 @ApiBearerAuth()
+@UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin')
-@Roles('ADMIN')
-@UseGuards(RolesGuard)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
   // ─── Dashboard ─────────────────────────────────────────────────────────────
-  @Get('dashboard') @ApiOperation({ summary: 'Stats dashboard' })
-  getDashboard() { return this.adminService.getDashboardStats(); }
-
-  @Get('overview')
-  getOverview() { return this.adminService.getDashboardStats(); }
 
   @Get('dashboard/stats')
-  getDashboardStats() { return this.adminService.getDashboardStats(); }
+  @ApiOperation({ summary: 'Statistiques globales du dashboard' })
+  getDashboardStats() {
+    return this.adminService.getDashboardStats();
+  }
 
   @Get('dashboard/rides/recent')
-  getRecentRides() { return this.adminService.getRecentRides(); }
+  @ApiOperation({ summary: 'Courses récentes' })
+  getRecentRides() {
+    return this.adminService.getRecentRides(10);
+  }
 
   @Get('dashboard/documents/pending')
-  getDashboardPendingDocs() { return this.adminService.getPendingDocuments(); }
-
-  // ─── Courses ───────────────────────────────────────────────────────────────
-  @Get('rides')
-  getRides(@Query('limit') limit?: string) { return this.adminService.getRecentRides(Number(limit || 50)); }
-
-  @Get('rides/active')
-  getActiveRides() { return this.adminService.getActiveRides(); }
+  @ApiOperation({ summary: 'Documents en attente de validation' })
+  getPendingDocuments() {
+    return this.adminService.getPendingDocuments();
+  }
 
   // ─── Chauffeurs ────────────────────────────────────────────────────────────
+
   @Get('drivers')
-  getDrivers(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.adminService.getDrivers(Number(page || 1), Number(limit || 50));
+  @ApiOperation({ summary: 'Liste de tous les chauffeurs' })
+  getAllDrivers() {
+    return this.adminService.getAllDrivers();
   }
 
-  @Get('drivers/pending')
-  getPendingDrivers() { return this.adminService.getPendingDrivers(); }
+  @Get('drivers/:id')
+  @ApiOperation({ summary: 'Détail d\'un chauffeur' })
+  getDriver(@Param('id') id: string) {
+    return this.adminService.getDriver(id);
+  }
 
   @Patch('drivers/:id/suspend')
-  suspendDriver(@Param('id') id: string) { return this.adminService.setUserStatus(id, 'SUSPENDED'); }
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Suspendre un chauffeur' })
+  suspendDriver(@Param('id') id: string) {
+    return this.adminService.suspendDriver(id);
+  }
 
   @Patch('drivers/:id/activate')
-  activateDriver(@Param('id') id: string) { return this.adminService.setUserStatus(id, 'ACTIVE'); }
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Activer/réactiver un chauffeur' })
+  activateDriver(@Param('id') id: string) {
+    return this.adminService.activateDriver(id);
+  }
 
   @Patch('drivers/:id/approval')
-  setDriverApproval(@Param('id') id: string, @Body() body: { approved: boolean; adminNotes?: string }) {
-    return this.adminService.setDriverApproval({ driverId: id, approved: body.approved, adminNotes: body.adminNotes });
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Approuver ou rejeter un dossier chauffeur' })
+  approveDriver(
+    @Param('id') id: string,
+    @Body() body: { approved: boolean; adminNotes?: string },
+  ) {
+    return this.adminService.approveOrRejectDriver(id, body.approved, body.adminNotes);
   }
-
-  // ─── Passagers ─────────────────────────────────────────────────────────────
-  @Get('passengers')
-  getPassengers(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.adminService.getPassengers(Number(page || 1), Number(limit || 50));
-  }
-
-  @Patch('passengers/:id/suspend')
-  suspendPassenger(@Param('id') id: string) { return this.adminService.setUserStatus(id, 'SUSPENDED'); }
-
-  @Patch('passengers/:id/activate')
-  activatePassenger(@Param('id') id: string) { return this.adminService.setUserStatus(id, 'ACTIVE'); }
 
   // ─── Documents ─────────────────────────────────────────────────────────────
-  @Get('documents/pending')
-  getPendingDocs() { return this.adminService.getPendingDocuments(); }
-
-  @Get('documents/approved')
-  getApprovedDocs() { return this.adminService.getApprovedDocuments(); }
 
   @Get('documents')
-  getDocsByStatus(@Query('status') status?: string) { return this.adminService.getDocumentsByStatus(status); }
+  @ApiOperation({ summary: 'Liste des documents' })
+  getAllDocuments(@Query('status') status?: string) {
+    return this.adminService.getAllDocuments(status);
+  }
 
   @Patch('documents/:id/approve')
-  approveDoc(@Req() req: any, @Param('id') id: string) {
-    return this.adminService.reviewDocument({ documentId: id, adminId: req.user.id, status: 'APPROVED' });
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Approuver un document' })
+  approveDocument(@Param('id') id: string) {
+    return this.adminService.approveDocument(id);
   }
 
   @Patch('documents/:id/reject')
-  rejectDoc(@Req() req: any, @Param('id') id: string, @Body() body: { reason?: string }) {
-    return this.adminService.reviewDocument({ documentId: id, adminId: req.user.id, status: 'REJECTED', rejectionReason: body.reason });
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Rejeter un document' })
+  rejectDocument(@Param('id') id: string, @Body() body: { reason?: string }) {
+    return this.adminService.rejectDocument(id, body.reason);
   }
 
-  @Patch('documents/:id/review')
-  reviewDoc(@Req() req: any, @Param('id') id: string, @Body() body: any) {
-    return this.adminService.reviewDocument({ documentId: id, adminId: req.user.id, ...body });
+  // ─── Passagers ─────────────────────────────────────────────────────────────
+
+  @Get('passengers')
+  @ApiOperation({ summary: 'Liste de tous les passagers' })
+  getAllPassengers() {
+    return this.adminService.getAllPassengers();
   }
 
-  @Post('documents/:id/approve')
-  approveDocPost(@Req() req: any, @Param('id') id: string) {
-    return this.adminService.reviewDocument({ documentId: id, adminId: req.user.id, status: 'APPROVED' });
+  @Patch('passengers/:id/suspend')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Suspendre un passager' })
+  suspendPassenger(@Param('id') id: string) {
+    return this.adminService.suspendPassenger(id);
   }
 
-  @Post('documents/:id/reject')
-  rejectDocPost(@Req() req: any, @Param('id') id: string, @Body() body: any) {
-    return this.adminService.reviewDocument({ documentId: id, adminId: req.user.id, status: 'REJECTED', rejectionReason: body.reason || body.rejectionReason });
+  @Patch('passengers/:id/activate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Activer un passager' })
+  activatePassenger(@Param('id') id: string) {
+    return this.adminService.activatePassenger(id);
+  }
+
+  // ─── Courses ───────────────────────────────────────────────────────────────
+
+  @Get('rides')
+  @ApiOperation({ summary: 'Liste de toutes les courses' })
+  getAllRides(@Query('limit') limit?: number) {
+    return this.adminService.getAllRides(limit ? Number(limit) : 50);
+  }
+
+  @Get('rides/active')
+  @ApiOperation({ summary: 'Courses actives en ce moment' })
+  getActiveRides() {
+    return this.adminService.getActiveRides();
   }
 
   // ─── Finances ──────────────────────────────────────────────────────────────
-  @Get('finance/stats')
-  getFinanceStats() { return this.adminService.getFinanceStats(); }
 
-  @Get('finance/transactions')
-  getFinanceTx(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.adminService.getFinanceTransactions(Number(page || 1), Number(limit || 20));
+  @Get('finance/stats')
+  @ApiOperation({ summary: 'Statistiques financières' })
+  getFinanceStats() {
+    return this.adminService.getFinanceStats();
   }
 
-  // ─── Config ────────────────────────────────────────────────────────────────
+  @Get('finance/chart')
+  @ApiOperation({ summary: 'Données graphique revenus' })
+  getFinanceChart(@Query('period') period?: 'daily' | 'weekly' | 'monthly') {
+    return this.adminService.getFinanceChart(period ?? 'weekly');
+  }
+
+  @Get('finance/transactions')
+  @ApiOperation({ summary: 'Liste des transactions' })
+  getFinanceTransactions(
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    return this.adminService.getFinanceTransactions(
+      page ? Number(page) : 1,
+      limit ? Number(limit) : 20,
+    );
+  }
+
+  // ─── Config (retourne des valeurs vides pour compatibilité) ────────────────
+
+  @Get('config')
+  getConfig() {
+    return { message: 'Config disponible' };
+  }
+
   @Get('config/pricing')
-  getPricing() { return this.adminService.getPricingConfig(); }
+  getPricingConfig() {
+    return { basePrice: 2.5, pricePerKm: 1.2, pricePerMin: 0.3 };
+  }
 
-  @Patch('config/pricing')
-  updatePricing(@Body() body: any) { return this.adminService.updatePricingConfig(body); }
+  @Get('config/financials')
+  getFinancialsConfig() {
+    return { commissionRate: 0.15 };
+  }
 
-  // ─── Estimation de prix ────────────────────────────────────────────────────
-  @Post('estimate-price')
-  estimatePrice(@Body() body: {
-    distanceKm: number;
-    durationMin: number;
-    vehicleType?: string;
-    zone?: string;
-    timeOfDay?: string;
-    trafficLevel?: string;
-    weatherCondition?: string;
-    demandLevel?: string;
-  }) { return this.adminService.estimatePrice(body); }
+  @Get('config/security')
+  getSecurityConfig() {
+    return { otpMaxAttempts: 5, otpExpiry: 600 };
+  }
 
-  // ─── Activité ──────────────────────────────────────────────────────────────
-  @Get('activity/logins')
-  getLoginActivity() { return this.adminService.getLoginActivity(); }
+  @Get('config/payments')
+  getPaymentsConfig() {
+    return { methods: ['CASH', 'CARD', 'ORANGE_MONEY'] };
+  }
 
-  @Get('login-activity')
-  getLoginActivityAlias() { return this.adminService.getLoginActivity(); }
+  // ─── Panics (stub) ─────────────────────────────────────────────────────────
+
+  @Get('panics')
+  getPanics() {
+    return [];
+  }
+
+  @Get('panics/active')
+  getActivePanics() {
+    return [];
+  }
 }
