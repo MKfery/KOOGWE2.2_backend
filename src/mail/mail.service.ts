@@ -76,7 +76,7 @@ export class MailService {
   private async sendEmail(to: string, subject: string, html: string) {
     try {
       await this.resend.emails.send({
-        from: 'Koogwe <noreply@koogwe.com>',
+        from: 'Koogwe <noreply@inovtechno.org>',  // ✅ domaine vérifié sur Resend
         to,
         subject,
         html,
