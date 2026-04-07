@@ -12,7 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { SendOtpDto, VerifyOtpDto, AdminLoginDto } from './dto/auth.dto';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class AuthService {
@@ -80,7 +80,7 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
-      include: { driver: true },
+      include: { driverProfile: true },
     });
 
     if (!user) {
@@ -142,8 +142,8 @@ export class AuthService {
         role: updatedUser.role,
         isVerified: updatedUser.isVerified,
         language: updatedUser.language,
-        hasDriver: !!user.driver,
-        driverStatus: user.driver?.status ?? null,
+        hasDriver: !!user.driverProfile,
+        driverStatus: user.driverProfile?.adminApproved ? 'APPROVED' : (user.driverProfile ? 'PENDING' : null),
       },
       isNewUser,
     };

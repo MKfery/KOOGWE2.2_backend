@@ -1,5 +1,5 @@
 // src/admin/admin.service.ts
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 
@@ -23,8 +23,8 @@ export class AdminService {
       totalRevenue,
     ] = await Promise.all([
       this.prisma.user.count({ where: { role: 'PASSENGER' } }),
-      this.prisma.driver.count(),
-      this.prisma.driver.count({ where: { status: 'PENDING' } }),
+      this.prisma.driverProfile.count(),
+      this.prisma.driverProfile.count({ where: { adminApproved: false, documentsUploaded: true } }),
       this.prisma.ride.count(),
       this.prisma.ride.count({ where: { status: { in: ['REQUESTED', 'ACCEPTED', 'DRIVER_EN_ROUTE', 'ARRIVED', 'IN_PROGRESS'] } } }),
       this.prisma.ride.count({ where: { status: 'COMPLETED' } }),
@@ -57,52 +57,46 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
       include: {
         passenger: { select: { id: true, firstName: true, lastName: true, email: true, avatarUrl: true } },
-        driver: {
-          include: {
-            user: { select: { id: true, firstName: true, lastName: true, email: true, avatarUrl: true } },
-          },
-        },
+        driver: { select: { id: true, firstName: true, lastName: true, email: true, avatarUrl: true } },
       },
     });
   }
 
   // ─── Documents en attente ──────────────────────────────────────────────────
   async getPendingDocuments() {
-    return this.prisma.driverDocument.findMany({
-      where: { isVerified: false },
-      orderBy: { createdAt: 'desc' },
+    return this.prisma.document.findMany({
+      where: { status: 'PENDING' },
+      orderBy: { uploadedAt: 'desc' },
       include: {
-        driver: {
-          include: {
-            user: { select: { id: true, firstName: true, lastName: true, email: true } },
-          },
-        },
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
       },
     });
   }
 
   // ─── Chauffeurs ────────────────────────────────────────────────────────────
   async getAllDrivers() {
-    return this.prisma.driver.findMany({
+    return this.prisma.driverProfile.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
         user: { select: { id: true, firstName: true, lastName: true, email: true, avatarUrl: true, isActive: true, createdAt: true } },
-        documents: true,
       },
     });
   }
 
   async getDriver(id: string) {
-    const driver = await this.prisma.driver.findUnique({
+    const driver = await this.prisma.driverProfile.findUnique({
       where: { id },
       include: {
-        user: true,
-        documents: true,
-        rides: {
-          take: 10,
-          orderBy: { createdAt: 'desc' },
+        user: {
           include: {
-            passenger: { select: { firstName: true, lastName: true } },
+            documents: true,
+            driverRides: {
+              take: 10,
+              orderBy: { createdAt: 'desc' },
+              include: {
+                passenger: { select: { firstName: true, lastName: true } },
+              },
+            },
           },
         },
       },
@@ -112,36 +106,49 @@ export class AdminService {
   }
 
   async suspendDriver(id: string) {
-    const driver = await this.prisma.driver.findUnique({ where: { id }, include: { user: true } });
+    const driver = await this.prisma.driverProfile.findUnique({ where: { id }, include: { user: true } });
     if (!driver) throw new NotFoundException('Chauffeur introuvable');
 
-    await this.prisma.driver.update({ where: { id }, data: { status: 'SUSPENDED' } });
-    await this.prisma.user.update({ where: { id: driver.userId }, data: { isActive: false } });
+    await this.prisma.driverProfile.update({ where: { id }, data: { adminApproved: false } });
+    await this.prisma.user.update({ where: { id: driver.userId }, data: { isActive: false, accountStatus: 'SUSPENDED' } });
 
     return { message: 'Chauffeur suspendu' };
   }
 
   async activateDriver(id: string) {
-    const driver = await this.prisma.driver.findUnique({ where: { id }, include: { user: true } });
+    const driver = await this.prisma.driverProfile.findUnique({ where: { id }, include: { user: true } });
     if (!driver) throw new NotFoundException('Chauffeur introuvable');
 
-    await this.prisma.driver.update({ where: { id }, data: { status: 'APPROVED' } });
-    await this.prisma.user.update({ where: { id: driver.userId }, data: { isActive: true } });
+    await this.prisma.driverProfile.update({ where: { id }, data: { adminApproved: true, adminApprovedAt: new Date() } });
+    await this.prisma.user.update({ where: { id: driver.userId }, data: { isActive: true, accountStatus: 'ACTIVE' } });
 
     return { message: 'Chauffeur activé' };
   }
 
   async approveOrRejectDriver(id: string, approved: boolean, adminNotes?: string) {
-    const driver = await this.prisma.driver.findUnique({
+    const driver = await this.prisma.driverProfile.findUnique({
       where: { id },
       include: { user: true },
     });
     if (!driver) throw new NotFoundException('Chauffeur introuvable');
 
-    const newStatus = approved ? 'APPROVED' : 'REJECTED';
-    await this.prisma.driver.update({ where: { id }, data: { status: newStatus } });
+    await this.prisma.driverProfile.update({
+      where: { id },
+      data: {
+        adminApproved: approved,
+        adminApprovedAt: approved ? new Date() : null,
+        adminNotes: adminNotes ?? null,
+      },
+    });
 
-    // Envoyer un email de notification
+    await this.prisma.user.update({
+      where: { id: driver.userId },
+      data: {
+        accountStatus: approved ? 'ACTIVE' : 'REJECTED',
+        isActive: approved,
+      },
+    });
+
     if (approved) {
       await this.mail.sendDriverApproved(
         driver.user.email,
@@ -156,36 +163,34 @@ export class AdminService {
   async getAllDocuments(status?: string) {
     const where: any = {};
     if (status && status !== 'ALL') {
-      where.isVerified = status === 'VERIFIED';
+      where.status = status;
     }
 
-    return this.prisma.driverDocument.findMany({
+    return this.prisma.document.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { uploadedAt: 'desc' },
       include: {
-        driver: {
-          include: {
-            user: { select: { id: true, firstName: true, lastName: true, email: true } },
-          },
-        },
+        user: { select: { id: true, firstName: true, lastName: true, email: true } },
       },
     });
   }
 
   async approveDocument(id: string) {
-    const doc = await this.prisma.driverDocument.findUnique({ where: { id } });
+    const doc = await this.prisma.document.findUnique({ where: { id } });
     if (!doc) throw new NotFoundException('Document introuvable');
 
-    await this.prisma.driverDocument.update({ where: { id }, data: { isVerified: true } });
+    await this.prisma.document.update({ where: { id }, data: { status: 'APPROVED', reviewedAt: new Date() } });
     return { message: 'Document approuvé' };
   }
 
   async rejectDocument(id: string, reason?: string) {
-    const doc = await this.prisma.driverDocument.findUnique({ where: { id } });
+    const doc = await this.prisma.document.findUnique({ where: { id } });
     if (!doc) throw new NotFoundException('Document introuvable');
 
-    // On supprime le document rejeté pour que le chauffeur puisse en soumettre un nouveau
-    await this.prisma.driverDocument.delete({ where: { id } });
+    await this.prisma.document.update({
+      where: { id },
+      data: { status: 'REJECTED', rejectionReason: reason ?? null, reviewedAt: new Date() },
+    });
     return { message: 'Document rejeté', reason };
   }
 
@@ -226,9 +231,7 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
       include: {
         passenger: { select: { firstName: true, lastName: true, email: true } },
-        driver: {
-          include: { user: { select: { firstName: true, lastName: true } } },
-        },
+        driver: { select: { firstName: true, lastName: true } },
         payment: true,
       },
     });
@@ -242,9 +245,7 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
       include: {
         passenger: { select: { firstName: true, lastName: true } },
-        driver: {
-          include: { user: { select: { firstName: true, lastName: true } } },
-        },
+        driver: { select: { firstName: true, lastName: true } },
       },
     });
   }
@@ -276,7 +277,6 @@ export class AdminService {
   }
 
   async getFinanceChart(period: 'daily' | 'weekly' | 'monthly' = 'weekly') {
-    // Retourner les 7 derniers jours groupés par jour
     const days = period === 'daily' ? 7 : period === 'weekly' ? 4 : 12;
     const data = [];
 
@@ -316,7 +316,7 @@ export class AdminService {
           paymentMethod: true,
           completedAt: true,
           passenger: { select: { firstName: true, lastName: true } },
-          driver: { include: { user: { select: { firstName: true, lastName: true } } } },
+          driver: { select: { firstName: true, lastName: true } },
         },
       }),
       this.prisma.ride.count({ where: { status: 'COMPLETED', finalPrice: { not: null } } }),
