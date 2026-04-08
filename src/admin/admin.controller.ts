@@ -2,6 +2,7 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
   Body,
   Param,
@@ -177,6 +178,26 @@ export class AdminController {
       page ? Number(page) : 1,
       limit ? Number(limit) : 20,
     );
+  }
+
+  // ─── Simulateur de prix ────────────────────────────────────────────────────
+
+  @Post('estimate-price')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Estimer le prix d\'une course (simulateur admin)' })
+  estimatePrice(
+    @Body() body: {
+      distanceKm: number;
+      durationMin: number;
+      vehicleType: string;
+      zone?: string;
+      timeOfDay?: string;
+      trafficLevel?: string;
+      weatherCondition?: string;
+      demandLevel?: string;
+    },
+  ) {
+    return this.adminService.estimatePrice(body);
   }
 
   // ─── Config (retourne des valeurs vides pour compatibilité) ────────────────
