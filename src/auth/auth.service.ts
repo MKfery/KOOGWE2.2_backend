@@ -149,12 +149,11 @@ export class AuthService {
     };
   }
 
-  // ─── NOUVEAU : Connexion Admin (email + mot de passe) ─────────────────────
+  // ─── CONNEXION ADMIN (email + mot de passe) ───────────────────────────────
   async adminLogin(dto: AdminLoginDto) {
     const { email, password } = dto;
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Trouver l'utilisateur
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
       select: {
@@ -166,10 +165,7 @@ export class AuthService {
         isActive: true,
         isVerified: true,
         avatarUrl: true,
-        language: true,
-        // Le mot de passe est stocké dans otpCode temporairement
-        // OU on utilise une variable d'environnement ADMIN_PASSWORD
-        otpCode: true,
+        hashedPassword: true,           // ← Champ ajouté dans le schema
       },
     });
 
@@ -177,7 +173,6 @@ export class AuthService {
       throw new UnauthorizedException('Identifiants invalides');
     }
 
-    // Vérifier que c'est bien un ADMIN
     if (user.role !== 'ADMIN') {
       throw new UnauthorizedException('Accès réservé aux administrateurs');
     }
@@ -186,26 +181,13 @@ export class AuthService {
       throw new UnauthorizedException('Ce compte est désactivé');
     }
 
-    // ── Vérification du mot de passe ──────────────────────────────────────
-    // Stratégie : on compare avec la variable d'env ADMIN_PASSWORD
-    // (simple et sécurisé pour un seul admin)
-    const adminPassword = this.config.get<string>('ADMIN_PASSWORD');
-
-    if (!adminPassword) {
-      this.logger.error('ADMIN_PASSWORD non configuré dans les variables d\'environnement !');
-      throw new UnauthorizedException('Configuration serveur incomplète');
+    // Vérification du mot de passe avec bcrypt
+    if (!user.hashedPassword) {
+      this.logger.error(`Admin ${normalizedEmail} n'a pas de mot de passe configuré`);
+      throw new UnauthorizedException('Compte admin non configuré correctement');
     }
 
-    // Comparer le mot de passe fourni avec celui stocké
-    // Support bcrypt hash ET mot de passe en clair (pour la migration)
-    let passwordValid = false;
-    if (adminPassword.startsWith('$2b$') || adminPassword.startsWith('$2a$')) {
-      // Mot de passe hashé avec bcrypt
-      passwordValid = await bcrypt.compare(password, adminPassword);
-    } else {
-      // Mot de passe en clair (à éviter en production, mais fonctionnel pour démarrer)
-      passwordValid = password === adminPassword;
-    }
+    const passwordValid = await bcrypt.compare(password, user.hashedPassword);
 
     if (!passwordValid) {
       throw new UnauthorizedException('Identifiants invalides');
@@ -220,10 +202,10 @@ export class AuthService {
       data: { refreshToken: tokens.refreshToken },
     });
 
-    this.logger.log(`✅ Connexion admin: ${normalizedEmail}`);
+    this.logger.log(`✅ Connexion admin réussie : ${normalizedEmail}`);
 
     return {
-      token: tokens.accessToken,        // ← clé "token" pour compatibilité avec l'admin web
+      token: tokens.accessToken,        // Important pour ton frontend admin
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       user: {

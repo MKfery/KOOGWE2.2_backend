@@ -12,25 +12,31 @@ async function bootstrap() {
   // ─── Sécurité ─────────────────────────────────────────────────────────────
   app.use(helmet());                    // ← Correction : plus de .default()
 
-  // ─── CORS (Production Ready) ──────────────────────────────────────────────
-  app.enableCors({
-    origin: process.env.FRONTEND_URLS 
-      ? process.env.FRONTEND_URLS.split(',').map((u: string) => u.trim())
-      : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080'],
-    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
-    credentials: true,
-  });
+ // ─── CORS (Production Ready) ──────────────────────────────────────────────
+app.enableCors({
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    const allowedOrigins = [
+      'https://admin-koogwe-rho.vercel.app',     // ← TON ADMIN PANEL
+      ...(process.env.FRONTEND_URLS 
+        ? process.env.FRONTEND_URLS.split(',').map((u: string) => u.trim())
+        : []),
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:8080',
+    ].filter(Boolean);
 
-  // ─── Validation globale ───────────────────────────────────────────────────
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: { enableImplicitConversion: true },
-    }),
-  );
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS bloqué : ${origin}`), false);
+    }
+  },
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+  credentials: true,
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
+});
 
   // ─── Préfixe global /api ──────────────────────────────────────────────────
   app.setGlobalPrefix('api');

@@ -139,56 +139,55 @@ enum ParcelSize {
 // ─────────────────────────────────────────────────────────────────────────────
 // MODELS
 // ─────────────────────────────────────────────────────────────────────────────
-
 model User {
-  id                    String   @id @default(uuid())
-  email                 String   @unique
-  phone                 String?  @unique
-  firstName             String?
-  lastName              String?
-  avatarUrl             String?
-  role                  UserRole @default(PASSENGER)
-  isVerified            Boolean  @default(false)
-  isActive              Boolean  @default(true)
-  language              String   @default("fr")
-  fcmToken              String?
-  accountStatus         AccountStatus @default(EMAIL_NOT_VERIFIED)
+  id                 String   @id @default(uuid())
+  email              String   @unique
+  hashedPassword     String?   // ← AJOUTÉ ICI (pour admin + futur login classique)
+  phone              String?  @unique
+  firstName          String?
+  lastName           String?
+  avatarUrl          String?
+  role               UserRole @default(PASSENGER)
+  isVerified         Boolean  @default(false)
+  isActive           Boolean  @default(true)
+  language           String   @default("fr")
+  fcmToken           String?
+  accountStatus      AccountStatus @default(EMAIL_NOT_VERIFIED)
 
   // Auth OTP
-  otpCode               String?
-  otpExpiresAt          DateTime?
-  otpAttempts           Int      @default(0)
-  refreshToken          String?
+  otpCode            String?
+  otpExpiresAt       DateTime?
+  otpAttempts        Int      @default(0)
+  refreshToken       String?
 
   // Face Verification
-  faceVerified          Boolean               @default(false)
-  faceImageUrl          String?
-  faceVerifiedAt        DateTime?
+  faceVerified       Boolean  @default(false)
+  faceImageUrl       String?
+  faceVerifiedAt     DateTime?
   faceVerificationMethod FaceVerificationMethod?
-  faceConfidenceScore   Float?
-  faceVerificationAttempts Int                 @default(0)
+  faceConfidenceScore Float?
+  faceVerificationAttempts Int @default(0)
   lastFaceVerificationAttempt DateTime?
+  lastLoginAt        DateTime?
 
-  lastLoginAt           DateTime?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  driverProfile         DriverProfile?
-  passengerRides        Ride[]   @relation("PassengerRides")
-  driverRides           Ride[]   @relation("DriverRides")
-  sentMessages          Message[] @relation("SentMessages")
-  notifications         Notification[]
-  reviewsGiven          Review[] @relation("ReviewsGiven")
-  reviewsReceived       Review[] @relation("ReviewsReceived")
-  payments              Payment[]
-  wallet                Wallet?
-  transactions          Transaction[]
-  documents             Document[]
-  savedPlaces           SavedPlace[]
+  driverProfile      DriverProfile?
+  passengerRides     Ride[]   @relation("PassengerRides")
+  driverRides        Ride[]   @relation("DriverRides")
+  sentMessages       Message[] @relation("SentMessages")
+  notifications      Notification[]
+  reviewsGiven       Review[] @relation("ReviewsGiven")
+  reviewsReceived    Review[] @relation("ReviewsReceived")
+  payments           Payment[]
+  wallet             Wallet?
+  transactions       Transaction[]
+  documents          Document[]
+  savedPlaces        SavedPlace[]
 
   @@map("users")
 }
-
 model DriverProfile {
   id                      String      @id @default(uuid())
   userId                  String      @unique
