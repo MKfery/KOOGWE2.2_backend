@@ -165,7 +165,7 @@ export class AuthService {
         isActive: true,
         isVerified: true,
         avatarUrl: true,
-        hashedPassword: true,           // ← Champ ajouté dans le schema
+        hashedPassword: true,
       },
     });
 
@@ -181,7 +181,6 @@ export class AuthService {
       throw new UnauthorizedException('Ce compte est désactivé');
     }
 
-    // Vérification du mot de passe avec bcrypt
     if (!user.hashedPassword) {
       this.logger.error(`Admin ${normalizedEmail} n'a pas de mot de passe configuré`);
       throw new UnauthorizedException('Compte admin non configuré correctement');
@@ -193,10 +192,8 @@ export class AuthService {
       throw new UnauthorizedException('Identifiants invalides');
     }
 
-    // Générer les tokens
     const tokens = await this.generateTokens(user.id, user.email, user.role);
 
-    // Sauvegarder le refresh token
     await this.prisma.user.update({
       where: { id: user.id },
       data: { refreshToken: tokens.refreshToken },
@@ -205,7 +202,7 @@ export class AuthService {
     this.logger.log(`✅ Connexion admin réussie : ${normalizedEmail}`);
 
     return {
-      token: tokens.accessToken,        // Important pour ton frontend admin
+      token: tokens.accessToken,           // ← Clé principale attendue par le frontend
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       user: {
