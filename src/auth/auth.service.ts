@@ -16,9 +16,6 @@ import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class AuthService {
-  loginWithPassword(email: string, password: string) {
-    throw new Error('Method not implemented.');
-  }
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
@@ -149,6 +146,44 @@ export class AuthService {
         driverStatus: user.driverProfile?.adminApproved ? 'APPROVED' : (user.driverProfile ? 'PENDING' : null),
       },
       isNewUser,
+    };
+  }
+
+  // ─── CONNEXION PASSAGER / CHAUFFEUR (email + mot de passe) ──────────────────
+  async loginWithPassword(email: string, password: string) {
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      include: { driverProfile: true },
+    });
+
+    if (!user) throw new UnauthorizedException('Email ou mot de passe incorrect');
+    if (!user.isActive) throw new UnauthorizedException('Ce compte est desactive');
+    if (!user.hashedPassword) throw new UnauthorizedException('Aucun mot de passe configure. Utilisez la connexion OTP.');
+
+    const valid = await bcrypt.compare(password, user.hashedPassword);
+    if (!valid) throw new UnauthorizedException('Email ou mot de passe incorrect');
+
+    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    await this.prisma.user.update({ where: { id: user.id }, data: { refreshToken: tokens.refreshToken } });
+
+    return {
+      ...tokens,
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        avatarUrl: user.avatarUrl,
+        phone: user.phone,
+        role: user.role,
+        isVerified: user.isVerified,
+        language: user.language,
+        hasDriver: !!user.driverProfile,
+        driverStatus: user.driverProfile?.adminApproved ? 'APPROVED' : (user.driverProfile ? 'PENDING' : null),
+      },
+      isNewUser: false,
     };
   }
 
