@@ -9,5 +9,6 @@ import { MailModule } from '../mail/mail.module';
   imports: [PrismaModule, MailModule],
   controllers: [AdminController],
   providers: [AdminService],
+  exports: [AdminService],
 })
 export class AdminModule {}

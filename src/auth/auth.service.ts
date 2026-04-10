@@ -16,6 +16,9 @@ import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class AuthService {
+  loginWithPassword(email: string, password: string) {
+    throw new Error('Method not implemented.');
+  }
   private readonly logger = new Logger(AuthService.name);
 
   constructor(

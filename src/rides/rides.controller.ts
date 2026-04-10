@@ -1,9 +1,8 @@
 // src/rides/rides.controller.ts
-// ✅ VERSION PRODUCTION — requesterId toujours issu du JWT (@Request req)
-
-import { Controller, Post, Get, Patch, Param, Body, Request, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Param, Body, Request, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { RidesService } from './rides.service';
+import { AdminService } from '../admin/admin.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('Rides')
@@ -11,7 +10,25 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 @Controller('rides')
 @UseGuards(JwtAuthGuard)
 export class RidesController {
-  constructor(private readonly ridesService: RidesService) {}
+  constructor(
+    private readonly ridesService: RidesService,
+    private readonly adminService: AdminService,
+  ) {}
+
+  // === PASSAGER : estimer le prix avant de créer une course ===
+  @Post('estimate')
+  @HttpCode(HttpStatus.OK)
+  estimatePrice(@Body() body: {
+    distanceKm: number;
+    durationMin: number;
+    vehicleType: string;
+  }) {
+    return this.adminService.estimatePrice({
+      distanceKm: body.distanceKm,
+      durationMin: body.durationMin,
+      vehicleType: body.vehicleType,
+    });
+  }
 
   // === PASSAGER : créer une course ===
   @Post()
@@ -32,7 +49,6 @@ export class RidesController {
   }
 
   // === CHAUFFEUR / PASSAGER : changer le statut ===
-  // ✅ FIX : requesterId passé depuis le JWT, plus depuis le body
   @Patch(':id/status')
   updateStatus(
     @Request() req: any,
@@ -43,7 +59,6 @@ export class RidesController {
   }
 
   // === CHAUFFEUR : vérifier le PIN du passager ===
-  // ✅ FIX : driverId toujours depuis le JWT
   @Post(':id/verify-pin')
   verifyPin(@Request() req: any, @Param('id') rideId: string, @Body() body: { pin: string }) {
     return this.ridesService.verifyPin(rideId, req.user.id, body.pin);

@@ -18,7 +18,6 @@ import { Public } from './guards/jwt-auth.guard';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  // ─── POST /api/auth/send-otp ──────────────────────────────────────────────
   @Public()
   @Post('send-otp')
   @HttpCode(HttpStatus.OK)
@@ -29,7 +28,6 @@ export class AuthController {
     return this.authService.sendOtp(dto);
   }
 
-  // ─── POST /api/auth/verify-otp ────────────────────────────────────────────
   @Public()
   @Post('verify-otp')
   @HttpCode(HttpStatus.OK)
@@ -40,8 +38,23 @@ export class AuthController {
     return this.authService.verifyOtp(dto);
   }
 
-  // ─── POST /api/auth/admin-login ───────────────────────────────────────────
-  // ✅ NOUVELLE ROUTE — Connexion admin par email + mot de passe
+  // ── Alias pour le chauffeur qui appelle /auth/verify-otp-and-password ──
+  @Public()
+  @Post('verify-otp-and-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Vérifie OTP (alias chauffeur) — redirige vers verify-otp' })
+  async verifyOtpAndPassword(@Body() body: { email: string; code: string; password?: string }) {
+    return this.authService.verifyOtp({ email: body.email, code: body.code });
+  }
+
+  @Public()
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Connexion email + mot de passe' })
+  async login(@Body() body: { email: string; password: string }) {
+    return this.authService.loginWithPassword(body.email, body.password);
+  }
+
   @Public()
   @Post('admin-login')
   @HttpCode(HttpStatus.OK)
@@ -52,7 +65,6 @@ export class AuthController {
     return this.authService.adminLogin(dto);
   }
 
-  // ─── POST /api/auth/refresh ───────────────────────────────────────────────
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
@@ -64,7 +76,6 @@ export class AuthController {
     return this.authService.refreshTokens(payload.sub, dto.refreshToken);
   }
 
-  // ─── POST /api/auth/logout ────────────────────────────────────────────────
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
@@ -74,7 +85,6 @@ export class AuthController {
     return { message: 'Déconnexion réussie' };
   }
 
-  // ─── POST /api/auth/fcm-token ─────────────────────────────────────────────
   @Post('fcm-token')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
@@ -84,7 +94,6 @@ export class AuthController {
     return { message: 'FCM token mis à jour' };
   }
 
-  // ─── GET /api/auth/me ─────────────────────────────────────────────────────
   @Get('me')
   @ApiBearerAuth()
   @ApiOperation({ summary: "Retourne le profil de l'utilisateur connecté" })

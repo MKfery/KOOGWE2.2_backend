@@ -23,7 +23,6 @@ import { PrismaService } from '../prisma/prisma.service';
         .map((u) => u.trim())
         .filter(Boolean)
         .concat(['http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080']);
-
       if (allowedOrigins.includes(origin)) return callback(null, true);
       callback(new Error(`CORS WebSocket bloqué: ${origin}`));
     },
@@ -74,7 +73,6 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.log(`❌ Déconnecté : socket=${client.id}`);
   }
 
-  // === Tous les handlers restent les mêmes que tu avais (je les ai gardés) ===
   @SubscribeMessage('driver:location')
   async handleDriverLocation(
     @ConnectedSocket() client: Socket,
@@ -130,7 +128,6 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const driverId = (client as any).userId;
     if (!driverId || !data.rideId) return;
 
-    // ... (le reste de ta logique est conservé tel quel)
     try {
       const ride = await this.prisma.ride.findUnique({ where: { id: data.rideId } });
       if (!ride || ride.status !== 'REQUESTED') return;
@@ -164,11 +161,71 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
           rating: driver?.driverProfile?.rating,
         },
       });
+
+      // Notifier aussi le passager via ride:status
+      this.server.to(`ride:${data.rideId}`).emit('ride:status', {
+        rideId: data.rideId,
+        status: 'ACCEPTED',
+      });
     } catch (e) {
       this.logger.error(`ride:accept error: ${e}`);
     }
   }
 
-  // Ajoute les autres handlers (`ride:status`, `chat:message`) si tu veux que je les corrige aussi.
-  // Pour l'instant je les laisse comme tu les avais.
+  // === Mise à jour de statut depuis le client (annulation, etc.) ===
+  @SubscribeMessage('ride:status')
+  async handleRideStatus(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { rideId: string; status: string },
+  ) {
+    const userId = (client as any).userId;
+    if (!userId || !data.rideId || !data.status) return;
+
+    try {
+      const ride = await this.prisma.ride.findUnique({ where: { id: data.rideId } });
+      if (!ride) return;
+      if (ride.passengerId !== userId && ride.driverId !== userId) return;
+
+      await this.prisma.ride.update({
+        where: { id: data.rideId },
+        data: {
+          status: data.status as any,
+          ...(data.status === 'COMPLETED' ? { completedAt: new Date() } : {}),
+          ...(data.status === 'CANCELLED' ? { cancelledAt: new Date() } : {}),
+        },
+      });
+
+      this.server.to(`ride:${data.rideId}`).emit('ride:status', {
+        rideId: data.rideId,
+        status: data.status,
+      });
+    } catch (e) {
+      this.logger.error(`ride:status error: ${e}`);
+    }
+  }
+
+  // === Chat en temps réel entre passager et chauffeur ===
+  @SubscribeMessage('chat:message')
+  async handleChatMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { rideId: string; message: string },
+  ) {
+    const userId = (client as any).userId;
+    if (!userId || !data.rideId || !data.message) return;
+
+    try {
+      const ride = await this.prisma.ride.findUnique({ where: { id: data.rideId } });
+      if (!ride) return;
+      if (ride.passengerId !== userId && ride.driverId !== userId) return;
+
+      this.server.to(`ride:${data.rideId}`).emit('chat:message', {
+        rideId: data.rideId,
+        senderId: userId,
+        message: data.message,
+        sentAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      this.logger.error(`chat:message error: ${e}`);
+    }
+  }
 }
