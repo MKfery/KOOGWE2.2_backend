@@ -37,7 +37,7 @@ export class DriversService {
     if (existing) throw new BadRequestException('Profil chauffeur déjà existant');
 
     if (dto.vehiclePlate) {
-      const plateExists = await this.prisma.driverProfile.findUnique({ where: { licensePlate: dto.vehiclePlate } });
+      const plateExists = await this.prisma.driverProfile.findFirst({ where: { licensePlate: dto.vehiclePlate } });
       if (plateExists) throw new BadRequestException('Cette plaque est déjà utilisée');
     }
 
