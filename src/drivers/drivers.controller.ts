@@ -1,6 +1,7 @@
 // src/drivers/drivers.controller.ts
-import { Controller, Get, Post, Patch, Body, Req, Query, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Req, Query, Param, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { DriversService } from './drivers.service';
 import { FaceVerificationService } from '../face-verification/face-verification.service';
 import { Roles, RolesGuard, JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -82,12 +83,19 @@ export class DriversController {
   // DOCUMENTS
   // ─────────────────────────────────────────────────────────────────────────
   @Post('documents')
-  @ApiOperation({ summary: 'Enregistrer un document (URL Cloudinary)' })
+  @ApiOperation({ summary: 'Enregistrer un document (multipart file)' })
+  @UseInterceptors(FileInterceptor('file'))
   uploadDocument(
     @Req() req: any,
     @Body('type') type: string,
-    @Body('fileUrl') fileUrl: string,
+    @UploadedFile() file: Express.Multer.File,
   ) {
+    // Si c'est un fichier uploadé, utiliser l'URL
+    if (file) {
+      return this.driversService.uploadDocument(req.user.id, type, file.path);
+    }
+    // Sinon accepter aussi fileUrl (compatibilité)
+    const { fileUrl } = req.body;
     return this.driversService.uploadDocument(req.user.id, type, fileUrl);
   }
 
