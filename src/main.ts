@@ -4,17 +4,10 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import helmet from 'helmet';
-import { NestExpressResponse } from '@nestjs/platform-express';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
-
-  // ─── Multer pour upload de fichiers ─────────────────────────────────────
-  app.use((req: NestExpressResponse['req'], res: NestExpressResponse, next: () => void) => {
-    // Laissez passer les requêtes
-    next();
-  });
 
   // ─── Sécurité ─────────────────────────────────────────────────────────────
   app.use(helmet());                    // ← Correction : plus de .default()
