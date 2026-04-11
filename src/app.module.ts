@@ -13,6 +13,7 @@ import { RidesModule } from './rides/rides.module';
 import { AdminModule } from './admin/admin.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { WalletModule } from './wallet/wallet.module';
+import { DocumentsModule } from './documents/documents.module';
 
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 
@@ -52,6 +53,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     RidesModule,
     AdminModule,
     WalletModule,
+    DocumentsModule,
   ],
   providers: [
     // Global Guards
