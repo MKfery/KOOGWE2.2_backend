@@ -9,9 +9,6 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ENUMS
-// ─────────────────────────────────────────────────────────────────────────────
 enum UserRole {
   PASSENGER
   DRIVER
@@ -136,13 +133,10 @@ enum ParcelSize {
   LARGE
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MODELS
-// ─────────────────────────────────────────────────────────────────────────────
 model User {
   id                 String   @id @default(uuid())
   email              String   @unique
-  hashedPassword     String?   // ← AJOUTÉ ICI (pour admin + futur login classique)
+  hashedPassword     String?
   phone              String?  @unique
   firstName          String?
   lastName           String?
@@ -154,13 +148,11 @@ model User {
   fcmToken           String?
   accountStatus      AccountStatus @default(EMAIL_NOT_VERIFIED)
 
-  // Auth OTP
   otpCode            String?
   otpExpiresAt       DateTime?
   otpAttempts        Int      @default(0)
   refreshToken       String?
 
-  // Face Verification
   faceVerified       Boolean  @default(false)
   faceImageUrl       String?
   faceVerifiedAt     DateTime?
@@ -188,6 +180,7 @@ model User {
 
   @@map("users")
 }
+
 model DriverProfile {
   id                      String      @id @default(uuid())
   userId                  String      @unique
@@ -197,7 +190,7 @@ model DriverProfile {
   vehicleMake             String?
   vehicleModel            String?
   vehicleYear             Int?
-  licensePlate            String?     @unique
+  licensePlate            String?
   vehicleColor            String?
 
   faceVerified            Boolean     @default(false)
