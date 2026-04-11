@@ -78,7 +78,7 @@ export class AdminService {
     return this.prisma.driverProfile.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
-        user: { select: { id: true, firstName: true, lastName: true, email: true, avatarUrl: true, isActive: true, createdAt: true } },
+        user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, avatarUrl: true, isActive: true, accountStatus: true, createdAt: true, lastLoginAt: true } },
       },
     });
   }
