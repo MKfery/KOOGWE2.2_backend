@@ -84,8 +84,12 @@ export class DocumentsService {
 
     // Upload vers Cloudinary
     const folder = `koogwe/documents/${userId}/${docType}`;
+    // Cloudinary nécessite le préfixe data URI pour les uploads inline
+    const dataUri = imageBase64.startsWith('data:')
+      ? imageBase64
+      : `data:image/jpeg;base64,${cleanBase64}`;
     const uploadResult = await this.cloudinaryService.uploadImage(
-      imageBase64, 
+      dataUri,
       folder
     );
 
@@ -100,12 +104,17 @@ export class DocumentsService {
       },
     });
 
-    // Mise à jour du profil chauffeur
-    await this.prisma.driverProfile.update({
+    // Mise à jour du profil chauffeur (upsert pour éviter erreur si profil inexistant)
+    await this.prisma.driverProfile.upsert({
       where: { userId },
-      data: { 
+      update: { 
         documentsUploaded: true, 
-        documentsUploadedAt: new Date() 
+        documentsUploadedAt: new Date(),
+      },
+      create: {
+        userId,
+        documentsUploaded: true,
+        documentsUploadedAt: new Date(),
       },
     }).catch(() => undefined);
 
