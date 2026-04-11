@@ -21,8 +21,25 @@ export class DocumentsService {
   ) {}
 
   private parseDocType(type: string): DocumentType {
+    // Mapping des types envoyés par Flutter vers les types Prisma
+    const TYPE_MAP: Record<string, DocumentType> = {
+      license:           DocumentType.DRIVERS_LICENSE,
+      drivers_license:   DocumentType.DRIVERS_LICENSE,
+      gray_card:         DocumentType.VEHICLE_REGISTRATION,
+      vehicle_registration: DocumentType.VEHICLE_REGISTRATION,
+      insurance:         DocumentType.INSURANCE,
+      technical_control: DocumentType.TECHNICAL_CONTROL,
+      id_card_front:     DocumentType.ID_CARD_FRONT,
+      id_card_back:      DocumentType.ID_CARD_BACK,
+      selfie_with_id:    DocumentType.SELFIE_WITH_ID,
+    };
+
+    const normalized = (type || '').toLowerCase().trim();
+    if (TYPE_MAP[normalized]) return TYPE_MAP[normalized];
+
+    // Fallback: essai direct avec la valeur uppercase
     const val = (DocumentType as any)[(type || '').toUpperCase()];
-    if (!val) throw new BadRequestException('Type de document invalide');
+    if (!val) throw new BadRequestException(`Type de document invalide: ${type}`);
     return val;
   }
 
